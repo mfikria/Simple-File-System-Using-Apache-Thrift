@@ -5,7 +5,6 @@
  */
 package com.pat.filesystem.server;
 
-import com.pat.filesystem.services.FileSystemHandler;
 import com.pat.filesystem.services.FileSystemService;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.server.TThreadPoolServer;
@@ -23,7 +22,7 @@ public class FileSystemServer {
    TServer server = new TThreadPoolServer(
      new TThreadPoolServer.Args(serverTransport).processor(processor));
   
-   System.out.println("Starting the server...");
+   System.out.println("Server is running...");
    server.serve();
   } catch (Exception e) {
    e.printStackTrace();

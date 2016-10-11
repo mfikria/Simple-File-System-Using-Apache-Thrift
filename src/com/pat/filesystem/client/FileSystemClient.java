@@ -5,7 +5,7 @@
  */
 package com.pat.filesystem.client;
 
-import com.pat.filesystem.services.FileSystemHandler;
+import com.pat.filesystem.server.FileSystemHandler;
 import com.pat.filesystem.services.FileSystemService;
 import static com.sun.corba.se.impl.activation.ServerMain.logError;
 import java.io.File;

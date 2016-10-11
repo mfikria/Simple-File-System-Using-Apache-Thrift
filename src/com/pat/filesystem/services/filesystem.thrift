@@ -2,7 +2,7 @@
  * File System Service
  * @version 1.0
  */
-namespace java com.pat.filesystem  // defines the namespace 
+namespace java com.pat.filesystem.services  // defines the namespace 
 
 typedef i32 int  //typedefs to get convenient names for your types
 typedef list<string> string_list
