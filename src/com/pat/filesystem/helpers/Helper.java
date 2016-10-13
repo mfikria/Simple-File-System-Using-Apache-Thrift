@@ -21,7 +21,6 @@ import java.util.logging.Logger;
  */
 public class Helper {
     
-    
     public byte[] convertToByteArray(List<Byte> byteList) {
         byte[] byteArray = new byte[byteList.size()];
             for (int i = 0; i < byteList.size(); i++) {
