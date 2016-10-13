@@ -6,6 +6,7 @@
 package com.pat.filesystem.client;
 
 import com.pat.filesystem.services.FileAttribute;
+import com.pat.filesystem.services.FileChunk;
 import com.pat.filesystem.services.FileSystemHandler;
 import com.pat.filesystem.services.FileSystemService;
 import static com.sun.corba.se.impl.activation.ServerMain.logError;
@@ -14,6 +15,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -41,7 +44,7 @@ public class FileSystemClient {
     private static Integer serverPort;
     private static Boolean isRunning;
     private static Queue<String> listOfActions;
-    private int fileChunkSize = 128;
+    private static int fileChunkSize = 4096;
     
     
     private static TProtocol protocol;
@@ -68,24 +71,22 @@ public class FileSystemClient {
     }
     
     public static void execute(FileSystemService.Processor processor) throws TTransportException {
-        
-        transport =  new TSocket(serverAddress, serverPort);
+        transport =  new TFramedTransport(new TSocket(serverAddress, serverPort));
         protocol = new TBinaryProtocol(transport);
         transport.open();
         
-        FileSystemService.Client client = new FileSystemService.Client(protocol);
         String[] splitStr = listOfActions.remove().split("\\s+");
         switch (splitStr[0]) {
-            case "dir": dirAction(client, splitStr[1]); 
+            case "dir": dirAction(splitStr[1]); 
                         break;
-            case "createdir": createDirAction(client, splitStr[1], splitStr[2]); 
+            case "createdir": createDirAction(splitStr[1], splitStr[2]); 
                         break;
-//            case "getfile": getFileAction(client, splitStr[1], splitStr[2], splitStr[3]); 
-//                        break;
+            case "getfile": getFileAction(splitStr[1], splitStr[2], splitStr[3]); 
+                        break;
 //            case "putfile": putFileAction(client, splitStr[1], splitStr[2], splitStr[3]); 
 //                        break;
-//            case "exit": isRunning = false;
-//                        break;
+            case "exit": isRunning = false;
+                        break;
             default: System.out.println("Invalid Action.");
                     break;
         }
@@ -105,9 +106,12 @@ public class FileSystemClient {
         listOfActions.clear();
     }
     
-    private static void dirAction(FileSystemService.Client client, String path) {
+    private static void dirAction(String path) {
         
-        try {
+        try {            
+            FileSystemService.Client client = new FileSystemService.Client(protocol);
+            
+
             SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
             for (FileAttribute fileAttribute : client.dir(path)) {
                 System.out.println(fileAttribute.getFileName());
@@ -121,6 +125,8 @@ public class FileSystemClient {
                 System.out.println("Last Modified Date: " + formatter.parse(fileAttribute.getLastModifiedDate().replaceAll("Z$", "+0000")));
                 System.out.println();
             }
+        } catch (TTransportException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
         } catch (TException ex) {
             Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
         } catch (ParseException ex) {
@@ -128,17 +134,53 @@ public class FileSystemClient {
         }
     }
     
-     private static void createDirAction(FileSystemService.Client client, String path, String folderName) {
-        try {
+     private static void createDirAction(String path, String folderName) {
+        try {            
+            FileSystemService.Client client = new FileSystemService.Client(protocol);
+            
             if (client.createDir(path, folderName)) {
                 System.out.println("Success: Directory \"" + folderName + "\" has been created.");
             } else {
                 System.out.println("Error: Directory has been created before OR path is invalid.");
             }
+            
+        } catch (TTransportException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
         } catch (TException ex) {
             Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
         }
      }
+     
+    private static void getFileAction(String path, String fileName, String localPath) {
+        try {            
+            FileSystemService.Client client = new FileSystemService.Client(protocol);
+            
+            File newFile = Paths.get(localPath, fileName).toFile();
+            newFile.createNewFile();
+            FileOutputStream fileOutputStream = new FileOutputStream(newFile);
+            long currentPosition = 0;
+            
+            FileChannel fileChannel = fileOutputStream.getChannel();
+            boolean again = true;
+            
+            do {
+                FileChunk newFileChunk = client.getBytes(path, fileName, currentPosition, fileChunkSize);
+                currentPosition += fileChunkSize;
+                
+                fileChannel.write(newFileChunk.data);
+                
+                if (newFileChunk.getRemaining() <= 0) {
+                    again = false;
+                }
+            } while (again); 
+            
+            fileOutputStream.close();
+        } catch (TTransportException | IOException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (TException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
      
 //     private static void getFileAction(FileSystemService.Client client, String path, String fileName, String localPath) {
 //         FileOutputStream fos = null;

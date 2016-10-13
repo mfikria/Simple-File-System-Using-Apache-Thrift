@@ -10,9 +10,8 @@ typedef string DateTime
 typedef list<FileAttribute> fileAttributeList
 
 struct FileChunk {
-    1:string uid
-    2:binary data
-    3:i64 remaining
+    1:binary data
+    2:i64 remaining
 }
 
 struct FileAttribute {
@@ -27,5 +26,7 @@ service FileSystemService {
     fileAttributeList dir(1:string path),
     bool createDir(1:string path, 2:string dirName),
     FileChunk getBytes(1:string path, 2:string fileName, 3:int64 offset, 4:int size),
-    bool putfile(1:string path, 2:string fileName, 3:FileChunk fileChunk, 4:int64 offset, 5:int size)
+    bool putfile(1:string path, 2:string fileName, 3:FileChunk fileChunk, 4:int64 offset, 5:int size),
+    bool isFileInUse(1:string path, 2:string fileName),
+    FileAttribute getFileAttribute(1:string path, 2:string fileName)
 }

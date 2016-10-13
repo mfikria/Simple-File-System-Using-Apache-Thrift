@@ -8,8 +8,11 @@ package com.pat.filesystem.server;
 import com.pat.filesystem.services.FileSystemHandler;
 import com.pat.filesystem.services.FileSystemService;
 import java.util.Scanner;
+import org.apache.thrift.server.TNonblockingServer;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.server.TThreadPoolServer;
+import org.apache.thrift.transport.TNonblockingServerSocket;
+import org.apache.thrift.transport.TNonblockingServerTransport;
 import org.apache.thrift.transport.TServerSocket;
 import org.apache.thrift.transport.TServerTransport;
 
@@ -35,9 +38,9 @@ public class FileSystemServer {
         initialize();
         
         try {
-            TServerTransport serverTransport = new TServerSocket(serverPort);
-            TServer server = new TThreadPoolServer(
-            new TThreadPoolServer.Args(serverTransport).processor(processor));
+            TNonblockingServerTransport serverTransport = new TNonblockingServerSocket(serverPort);
+            TServer server = new TNonblockingServer(
+            new TNonblockingServer.Args(serverTransport).processor(processor));
             System.out.println("Server is running on port " + serverPort + "..."); 
             server.serve(); 
         } catch (Exception e) {
