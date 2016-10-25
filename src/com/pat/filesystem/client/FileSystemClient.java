@@ -9,20 +9,19 @@ import com.pat.filesystem.services.FileAttribute;
 import com.pat.filesystem.services.FileChunk;
 import com.pat.filesystem.services.FileSystemHandler;
 import com.pat.filesystem.services.FileSystemService;
-import static com.sun.corba.se.impl.activation.ServerMain.logError;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import static java.lang.Math.abs;
+import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Queue;
 import java.util.Scanner;
 import java.util.logging.Level;
@@ -77,14 +76,58 @@ public class FileSystemClient {
         
         String[] splitStr = listOfActions.remove().split("\\s+");
         switch (splitStr[0]) {
-            case "dir": dirAction(splitStr[1]); 
+            case "dir": 
+                if (splitStr.length >= 2) {
+                    if(!validatePath(splitStr[1])) {
+                        System.out.println("Error: Path in server is not valid");
                         break;
-            case "createdir": createDirAction(splitStr[1], splitStr[2]); 
+                    }
+                    dirAction(splitStr[1]);
+                } else {
+                    System.out.println("Error: arguments is not completed");
+                }
+                break;
+            case "createdir":
+                if (splitStr.length >= 3) {
+                    if(!validatePath(splitStr[1])) {
+                        System.out.println("Error: Path in server is not valid");
                         break;
-            case "getfile": getFileAction(splitStr[1], splitStr[2], splitStr[3]); 
+                    }
+                    createDirAction(splitStr[1], splitStr[2]); 
+                } else {
+                    System.out.println("Error: arguments is not completed");
+                }
+                break;
+            case "getfile":
+                if (splitStr.length >= 4) {
+                    if(!validatePath(splitStr[1])) {
+                        System.out.println("Error: Path in server is not valid");
                         break;
-//            case "putfile": putFileAction(client, splitStr[1], splitStr[2], splitStr[3]); 
-//                        break;
+                    }
+                    if(!validateLocalPath(splitStr[3])) {
+                        System.out.println("Error: Path in local is not valid");
+                        break;
+                    }
+                    getFileAction(splitStr[1], splitStr[2], splitStr[3]);
+                } else {
+                    System.out.println("Error: arguments is not completed");
+                }
+                break;
+            case "putfile":
+                if (splitStr.length >= 4) {
+                    if(!validatePath(splitStr[1])) {
+                        System.out.println("Error: Path in server is not valid");
+                        break;
+                    }
+                    if(!validateLocalPath(splitStr[3])) {
+                        System.out.println("Error: Path in local is not valid");
+                        break;
+                    }
+                    putFileAction(splitStr[1], splitStr[2], splitStr[3]);
+                } else {
+                    System.out.println("Error: arguments is not completed");
+                }
+                break;
             case "exit": isRunning = false;
                         break;
             default: System.out.println("Invalid Action.");
@@ -113,6 +156,9 @@ public class FileSystemClient {
             
 
             SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ");
+            
+            int iterator = 0;
+            
             for (FileAttribute fileAttribute : client.dir(path)) {
                 System.out.println(fileAttribute.getFileName());
                 System.out.print("Size: " + fileAttribute.getSize());
@@ -124,7 +170,14 @@ public class FileSystemClient {
                 System.out.println("Created Date: " +  formatter.parse(fileAttribute.getCreatedDate().replaceAll("Z$", "+0000")));
                 System.out.println("Last Modified Date: " + formatter.parse(fileAttribute.getLastModifiedDate().replaceAll("Z$", "+0000")));
                 System.out.println();
+                
+                iterator++;
             }
+            
+            if (iterator == 0) {
+                System.out.println("/");
+            }
+            
         } catch (TTransportException ex) {
             Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
         } catch (TException ex) {
@@ -152,92 +205,167 @@ public class FileSystemClient {
      }
      
     private static void getFileAction(String path, String fileName, String localPath) {
-        try {            
-            FileSystemService.Client client = new FileSystemService.Client(protocol);
+        
+        // Create client instance
+        FileSystemService.Client client = new FileSystemService.Client(protocol);
+        
+        // Create file instance
+        File newFile = Paths.get(localPath, fileName).toFile();
             
-            File newFile = Paths.get(localPath, fileName).toFile();
+        // Initialization
+        long offset = 0;
+        boolean again = true;
+        long startTime = System.nanoTime();
+        FileAttribute fileAttribute = null;
+        int size = fileChunkSize;
+        
+        try {
+            
+            // Create new file in local
             newFile.createNewFile();
+            
             FileOutputStream fileOutputStream = new FileOutputStream(newFile);
-            long currentPosition = 0;
-            
             FileChannel fileChannel = fileOutputStream.getChannel();
-            boolean again = true;
             
-            do {
-                FileChunk newFileChunk = client.getBytes(path, fileName, currentPosition, fileChunkSize);
-                currentPosition += fileChunkSize;
+            // Get File Attribute first
+            fileAttribute = client.getFileAttribute(path, fileName);
+            long fileSize = fileAttribute.getSize();
+            long remainingBytes = fileSize;
+            
+            // Handle small file
+            if (fileSize < size) {
+                size = abs((int) fileSize);
+            }
                 
+            do {
+                // Get File Chunk from server
+                FileChunk newFileChunk = client.getBytes(path, fileName, offset, size);
+                
+                // Streaming File Chunk to local file
                 fileChannel.write(newFileChunk.data);
                 
-                if (newFileChunk.getRemaining() <= 0) {
-                    again = false;
+                // Terminate streaming when no remaining bytes
+                remainingBytes = newFileChunk.getRemainingBytes();
+                again = (remainingBytes > 0);
+                
+                if (again) {
+                    // Update Offset
+                    offset += size;
+                    
+                    if(remainingBytes < size) {
+                        size = abs((int) remainingBytes);
+                    }
                 }
-            } while (again); 
+            } while (again);
             
-            fileOutputStream.close();
+            if (!again) {
+                long endTime = System.nanoTime();
+                System.out.println("Success: File \"" + fileName + "\" has been transfered from \"" + path + "\" to \"" + localPath + "\".");
+                float duration = (endTime - startTime) / 1000000;
+                System.out.println("Transfer time: " + duration + " ms");
+                System.out.println("File Size: " + fileSize + " bytes");
+                long transferedBytes = fileSize - remainingBytes;
+                System.out.println("Bytes Transfered: " + transferedBytes + " bytes");
+            }
         } catch (TTransportException | IOException ex) {
             Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+            System.out.println("Error: Problem occured while tranfering bytes.");
+        } catch (TException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+            System.out.println("Error: Problem occured while tranfering bytes.");
+        }
+        
+        
+    }
+    
+    private static void putFileAction(String path, String fileName, String localPath) {
+        
+        // Create client instance
+        FileSystemService.Client client = new FileSystemService.Client(protocol);
+        
+        // Initialize local variables
+        boolean again = true;
+        long offset = 0;
+        int size = fileChunkSize;
+        long remainingBytes;
+        long startTime = System.nanoTime();
+        
+        try {
+            // Create access file for streaming data
+            File file = Paths.get(localPath, fileName).toFile();
+            RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r");
+            
+            // Initialize remaining bytes with file size
+            long fileSize = randomAccessFile.getChannel().size();
+            remainingBytes = fileSize;
+            
+            if (fileSize < Long.MAX_VALUE) {
+                // Mapping file to memory
+                MappedByteBuffer mappedByteBuffer = randomAccessFile.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
+//                mappedByteBuffer.load();
+                do {                  
+                    // Copy data to buffer
+                    if(size > mappedByteBuffer.remaining()) {
+                        size = mappedByteBuffer.remaining();
+                    }
+                    byte[] data = new byte[size];
+                    mappedByteBuffer.get(data);
+
+                    // Create instance File Chunk
+                    FileChunk fileChunk = new FileChunk();
+                    fileChunk.setData(data);
+                    fileChunk.setRemainingBytes(fileSize - offset - size);
+                    
+                    remainingBytes -= size;
+                    again = !client.putFile(path, fileName, fileChunk, offset, size);
+                    
+                    if(again) {
+                        // Update Offset & remainingBytes
+                       
+                         offset += size;
+                        // Handle for overflow buffer in mappedByteBuffer
+                    }
+                } while(again && mappedByteBuffer.hasRemaining());
+                
+                if(!again) {
+                    long endTime = System.nanoTime();
+                    float duration = (endTime - startTime) / 1000000;
+                    System.out.println("Success: File \"" + fileName + "\" has been transfered from \"" + localPath + "\" to \"" + path + "\".");
+                    System.out.println("Transfer time: " + duration + " ms");
+                    System.out.println("File Size: " + fileSize + " bytes");
+                    long transferedBytes = fileSize - remainingBytes;
+                    System.out.println("Bytes Transfered: " + transferedBytes + " bytes");
+                }
+                
+            } else {
+                System.out.println("Error: File size is above limit! Cannot process.");
+            }
+            
+        } catch (FileNotFoundException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+            System.out.println("Error: Problem occured while tranfering bytes.");
+        } catch (IOException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+            System.out.println("Error: Problem occured while tranfering bytes.");
+        } catch (TException ex) {
+            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
+            System.out.println("Error: Problem occured while tranfering bytes.");
+        }
+    }
+    
+    private static boolean validatePath (String path) {
+        try {
+            // Create client instance
+            FileSystemService.Client client = new FileSystemService.Client(protocol);
+            
+            return client.isValidPath(path);
         } catch (TException ex) {
             Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
         }
+        return false;
     }
-     
-//     private static void getFileAction(FileSystemService.Client client, String path, String fileName, String localPath) {
-//         FileOutputStream fos = null;
-//        try {
-//                       
-//            List<Byte> byteList = new ArrayList<Byte>();
-//             try {
-//                 byteList = client.getfile(path, fileName);
-//             } catch (TException ex) {
-//                 Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
-//             }
-//            
-//            byte[] byteArray = new byte[byteList.size()];
-//            for (int index = 0; index < byteList.size(); index++) {
-//                byteArray[index] = byteList.get(index);
-//            }
-//            
-//            File f = new File(localPath + fileName);
-//
-//            f.getParentFile().mkdirs(); 
-//            f.createNewFile();
-//            
-//            fos = new FileOutputStream(localPath + fileName);
-//            fos.write(byteArray);
-//            fos.close();
-//        } catch (FileNotFoundException ex) {
-//            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
-//        } catch (IOException ex) {
-//            Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
-//        }
-//     }
-//     
-//     private static void putFileAction(FileSystemService.Client client, String path, String fileName, String localPath) {
-//     FileInputStream targetInputStream = null;
-//            List<Byte> al = new ArrayList<Byte>();
-// 
-//            File targetFile = new File(localPath + fileName);
-//
-//            byte[] targetByteStream = new byte[(int) targetFile.length()];
-//
-//            try {
-//
-//                    targetInputStream = new FileInputStream(targetFile);
-//                    targetInputStream.read(targetByteStream);
-//                    targetInputStream.close();
-//
-//  
-//                    for(byte b : targetByteStream) {
-//                        al.add(new Byte(b));
-//                      }
-//                    
-//             boolean status = client.putfile(path, fileName, al);
-//        
-//            } catch (IOException e) {
-//                    logError("Exception" + e);
-//            }catch (TException ex) {
-//             Logger.getLogger(FileSystemClient.class.getName()).log(Level.SEVERE, null, ex);
-//         }
-//     }
+    
+    private static boolean validateLocalPath (String path) {
+        return Files.isDirectory(Paths.get(path));
+    }
 }

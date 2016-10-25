@@ -11,7 +11,7 @@ typedef list<FileAttribute> fileAttributeList
 
 struct FileChunk {
     1:binary data
-    2:i64 remaining
+    2:i64 remainingBytes
 }
 
 struct FileAttribute {
@@ -24,9 +24,20 @@ struct FileAttribute {
 
 service FileSystemService { 
     fileAttributeList dir(1:string path),
+
     bool createDir(1:string path, 2:string dirName),
-    FileChunk getBytes(1:string path, 2:string fileName, 3:int64 offset, 4:int size),
-    bool putfile(1:string path, 2:string fileName, 3:FileChunk fileChunk, 4:int64 offset, 5:int size),
-    bool isFileInUse(1:string path, 2:string fileName),
-    FileAttribute getFileAttribute(1:string path, 2:string fileName)
+
+    FileChunk getBytes(1:string path, 2:string fileName, 
+                       3:int64 offset, 4:int size),
+
+    bool putFile(1:string path, 2:string fileName, 
+                 3:FileChunk fileChunk, 4:int64 offset, 5:int size),
+
+    bool setFileAttribute(1:string path, 2:string fileName, 
+                          3:FileAttribute fileAttribute),
+
+    FileAttribute getFileAttribute(1:string path, 2:string fileName),
+
+    bool isValidPath(1:string path)
 }
+

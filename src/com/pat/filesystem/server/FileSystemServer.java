@@ -10,11 +10,9 @@ import com.pat.filesystem.services.FileSystemService;
 import java.util.Scanner;
 import org.apache.thrift.server.TNonblockingServer;
 import org.apache.thrift.server.TServer;
-import org.apache.thrift.server.TThreadPoolServer;
 import org.apache.thrift.transport.TNonblockingServerSocket;
 import org.apache.thrift.transport.TNonblockingServerTransport;
-import org.apache.thrift.transport.TServerSocket;
-import org.apache.thrift.transport.TServerTransport;
+import org.apache.thrift.transport.TTransportException;
 
 /**
  *
@@ -23,10 +21,10 @@ import org.apache.thrift.transport.TServerTransport;
 public class FileSystemServer {
     private static Integer serverPort;
     
-    private static Scanner reader = new Scanner(System.in);
+    private static final Scanner reader = new Scanner(System.in);
     
     public static void main(String[] args) {
-        run(new FileSystemService.Processor<FileSystemHandler>(new FileSystemHandler()));
+        run(new FileSystemService.Processor<>(new FileSystemHandler()));
     }
  
     public static void initialize() {
@@ -43,8 +41,7 @@ public class FileSystemServer {
             new TNonblockingServer.Args(serverTransport).processor(processor));
             System.out.println("Server is running on port " + serverPort + "..."); 
             server.serve(); 
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (TTransportException e) {
         }
     }
 }
